@@ -1,138 +1,65 @@
-# ⚔️ DamageLife — WoW 3.3.5a PvP / DPS
+# DamageLife — WoW 3.3.5a PvP / DPS
 
-> Тактический PvP/DPS-аддон для World of Warcraft 3.3.5a, созданный с упором на анализ целей, давление, burst, control, execute и боевые уведомления.
+> Тактический PvP/DPS-аддон для World of Warcraft 3.3.5a.
 
-**Текущая версия:** `1.3.4.14`  
-**WoW:** `3.3.5a / Interface 30300`  
+**Версия:** 1.3.4.14  
+**Интерфейс:** 30300  
 **Команда:** `/dl`
 
----
+## Что это
 
-## ✨ Возможности
+DamageLife — PvP/DPS-интерфейс для WoW 3.3.5a с анализом целей, burst/control/execute-событий, уведомлениями, BG Timer и инструментами для оценки боевой ситуации.
 
-- 🎯 интеллектуальная оценка целей и Target Windows;
-- 💥 Burst / Execute / Control / Defensive tracking;
-- 🔄 SWITCH — рекомендация смены цели с причиной;
-- ⚡ боевые уведомления, звуки и голосовые пакеты;
-- 🧠 Combat Advisor и анализ боевой ситуации;
-- 🏹 определение классов и специализаций;
-- 🏟️ BG Timers и тактические события для полей боя;
-- 🎨 собственный интерфейс DamageLife с текстурами и тематическими элементами;
-- 👤 профили и настройки для персонажей;
-- 🔊 Gong / Voice режимы уведомлений.
+## 1.3.4.14 — Update Checker
 
----
+В этой версии переработана архитектура проверки обновлений с приоритетом производительности.
 
-## 🔄 Система проверки обновлений
+### Производительность
 
-Начиная с `1.3.4.14`, проект использует двухуровневую архитектуру:
+- нет постоянного `OnUpdate` для проверки обновлений;
+- нет polling каждые 10–30 минут;
+- автоматическая проверка ограничена **не чаще 1 раза в 24 часа**;
+- проверка не выполняется во время боя или БГ/арены;
+- используется только асинхронный backend;
+- синхронные HTTP-запросы намеренно не используются, чтобы не блокировать UI;
+- ответ проверки предполагается маленьким и обрабатывается один раз;
+- нет автоматической загрузки или замены файлов аддона.
 
-```text
-GitHub Releases API
-        ↓
-DamageLife Companion
-        ↓
-DamageLifeUpdateCache.lua
-        ↓
-UpdateChecker.lua
-        ↓
-DamageLife UI
-```
+### Ограничение стандартного клиента
 
-### Почему не HTTP напрямую из аддона?
+Обычный WoW 3.3.5a addon Lua не имеет произвольного HTTPS API. Поэтому DamageLife не создаёт сокеты и не делает вид, что интернет-запрос работает в стандартном клиенте.
 
-Обычный WoW 3.3.5a addon Lua работает в sandbox и не получает произвольный HTTPS/file I/O API. Поэтому сетевую часть нельзя надёжно реализовать только `.lua`-файлами.
+`UpdateChecker.lua` имеет минимальный интерфейс для **асинхронного host/relay backend**, если такой backend предоставляется инфраструктурой клиента/сервера. Без него модуль не создаёт фоновой сетевой нагрузки.
 
-DamageLife решает это через **небольшой внешний companion**. Он выполняет HTTPS-запрос к GitHub Releases API, сравнивает версии и передаёт в аддон только безопасные данные о Release.
+## Установка
 
-### Что делает companion
+1. Распакуйте папку `DamageLife` в `Interface/AddOns/`.
+2. Перезапустите WoW или выполните `/reload`.
+3. Откройте настройки командой `/dl`.
 
-- автоматически проверяет GitHub Releases;
-- определяет установленную и последнюю версии;
-- сохраняет результат в `DamageLifeUpdateCache.lua`;
-- не выполняет код, полученный из GitHub;
-- не заменяет файлы аддона автоматически;
-- не требует от пользователя вручную открывать GitHub для самой проверки.
+## Обновления
 
-Подробнее: [`Tools/README.md`](Tools/README.md) и [`docs/AUTO_UPDATE.md`](docs/AUTO_UPDATE.md).
+Публичные версии распространяются через GitHub Releases. Автоматической замены файлов нет: найденная новая версия только сообщается пользователю.
 
-> **Важно:** автоматическое обнаружение обновления ≠ бесшумная установка. Пользователь сам решает, когда устанавливать новую версию аддона.
+## Структура
 
----
+- `DamageLife.lua` — основное ядро.
+- `CombatEngine.lua` — боевой анализ.
+- `CombatAdvisor.lua` — Combat Advisor.
+- `BGTimers.lua` — таймеры БГ.
+- `SpecDatabase.lua` / `SpecDetection.lua` — классы и специализации.
+- `AbilitySounds.lua` — звуковые уведомления.
+- `Settings.lua` — интерфейс настроек.
+- `UpdateChecker.lua` — лёгкая система проверки версий.
+- `Modules/` — KeyPress-модули.
 
-## 📦 Установка
+## Требования
 
-1. Скачать Release.
-2. Распаковать папку `DamageLife` в `Interface/AddOns/`.
-3. При использовании автоматической проверки запустить `Tools/Start-DamageLife.bat` перед WoW.
-4. Запустить WoW.
-5. Открыть `/dl` → **О проекте** → **GitHub / обновления**.
+- World of Warcraft 3.3.5a
+- Interface `30300`
 
----
+## Репозиторий
 
-## 🧪 Статус проекта
+`VegasGhoul/DamageLife-WotLK`
 
-Проект находится в активной разработке и тестируется на WoW 3.3.5a.
-
-При сообщении об ошибке желательно указать:
-
-- версию DamageLife;
-- название поля боя/арены или режима;
-- Lua error целиком;
-- что происходило непосредственно перед ошибкой.
-
----
-
-## 🗂️ Структура
-
-```text
-DamageLife/
-├── DamageLife.toc
-├── DamageLife.lua
-├── Settings.lua
-├── CombatEngine.lua
-├── CombatAdvisor.lua
-├── DPSCombat.lua
-├── BGTimers.lua
-├── SpecDatabase.lua
-├── SpecDetection.lua
-├── AbilitySounds.lua
-├── ControlAlerts.lua
-├── CompletionCore.lua
-├── Profiles.lua
-├── Localization.lua
-├── Theme.lua
-├── DamageLifeHTTP.lua
-├── DamageLifeUpdateCache.lua
-├── UpdateChecker.lua
-├── Modules/
-├── Textures/
-├── Sounds/
-└── Tools/
-    ├── DamageLifeUpdater.ps1
-    ├── Start-DamageLife.bat
-    └── README.md
-```
-
----
-
-## 📜 Версии
-
-Официальные версии публикуются через **GitHub Releases**.
-
-- `1.3.4.14` — GitHub Update System + Companion backend.
-- `1.3.4.13` — GitHub integration, UI fixes и SWITCH text fix.
-
----
-
-## 👤 Автор
-
-**Vegasy**
-
-GitHub: `VegasGhoul`
-
----
-
-## ⚠️ Дисклеймер
-
-DamageLife — пользовательский addon для WoW 3.3.5a. Проект не связан с Blizzard Entertainment.
+[GitHub](https://github.com/VegasGhoul/DamageLife-WotLK)
