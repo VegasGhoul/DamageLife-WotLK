@@ -1,27 +1,27 @@
 # DamageLife Changelog
 
-## 1.3.4.14 — GitHub Update System
+## 1.3.4.14 — Optimized Update Checker
 
 ### Added
 
-- High-level HTTP compatibility layer for supported host integrations.
-- Safe data-only update cache.
-- Windows companion updater using GitHub Releases API.
-- One-click companion launcher.
-- Automatic version comparison and in-game cached status display.
-- Documentation for the update architecture.
+- Лёгкий интерфейс для асинхронного update backend.
+- Сохранение последнего результата в SavedVariables.
+- Защита от повторной проверки чаще одного раза в 24 часа.
+- Защита от проверки во время боя и БГ/арены.
+- Документация архитектуры Update Checker.
 
 ### Changed
 
-- Reworked the `/dl → О проекте → GitHub / обновления` panel.
-- Removed the misleading expectation of direct HTTP from standard WoW 3.3.5a addon Lua.
-- Kept addon installation manual; no silent file replacement.
+- Убраны пользовательские BAT/PS1/EXE-компоненты.
+- Убран постоянный polling.
+- Убран `OnUpdate`-таймер для обновлений.
+- Синхронные HTTP-вызовы не используются.
+- Update Checker не загружает ZIP и не заменяет файлы аддона.
+- `/dl → О проекте → GitHub / обновления` показывает только достоверно полученные данные.
 
-### Fixed / maintained
+### Important
 
-- SWITCH notification text visibility.
-- Update panel layout and status messaging.
-- Version consistency at `1.3.4.14`.
+Стандартный WoW 3.3.5a addon sandbox не предоставляет произвольный HTTPS API. Поэтому реальный интернет-запрос возможен только при наличии разрешённого асинхронного host/relay backend. Без него Update Checker не создаёт фоновой сетевой нагрузки.
 
 ## 1.3.4.13
 
