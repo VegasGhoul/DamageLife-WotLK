@@ -23,6 +23,12 @@ U.lastNoticeTime = 0
 U.lastDirectName = nil
 U.lastDirectRequest = 0
 U.directRequestCooldown = 20
+U.lastManualCheck = 0
+U.manualPending = {}
+U.manualDeadline = 0
+U.manualSent = 0
+U.manualResponses = 0
+U.manualSummaryShown = false
 
 local function getCurrentVersion()
     if GetAddOnMetadata then
@@ -57,6 +63,43 @@ end
 function U.GetReleasePage() return U.RELEASE_PAGE end
 function U.GetStatus() return U.lastResult end
 
+local function rememberManualPeer(sender, version)
+    if not U.manualPending or U.manualDeadline <= 0 then return end
+    U.manualPending[sender] = tostring(version or "")
+    U.manualResponses = (U.manualResponses or 0) + 1
+    if U.CompareVersions(version, U.GetCurrentVersion()) > 0 then
+        notifyNewerVersion(version, sender)
+    end
+end
+
+local function finishManualCheck(force)
+    if not U.manualDeadline or U.manualDeadline <= 0 then return false end
+    local now = GetTime and GetTime() or 0
+    if not force and now < U.manualDeadline then return false end
+    if U.manualSummaryShown then return true end
+    U.manualSummaryShown = true
+    local count, newer, same, older = 0, 0, 0, 0
+    for sender, version in pairs(U.manualPending or {}) do
+        count = count + 1
+        local cmp = U.CompareVersions(version, U.GetCurrentVersion())
+        if cmp > 0 then newer = newer + 1
+        elseif cmp == 0 then same = same + 1
+        else older = older + 1 end
+    end
+    if count == 0 then
+        chatMessage("проверка завершена: ответов от других DamageLife не получено. Для открытого мира выберите другого игрока целью или наведите на него курсор; автоматического канала для ближайших игроков в WoW 3.3.5a нет.")
+    else
+        chatMessage("проверка завершена: ответов " .. count .. "; совпадает " .. same .. "; новее " .. newer .. "; старее " .. older .. ".")
+        for sender, version in pairs(U.manualPending or {}) do
+            local cmp = U.CompareVersions(version, U.GetCurrentVersion())
+            chatMessage(tostring(sender) .. " — DamageLife " .. tostring(version) .. " " ..
+                (cmp > 0 and "(НОВЕЕ)" or cmp == 0 and "(совпадает)" or "(старее)"))
+        end
+    end
+    U.manualDeadline = 0
+    return true
+end
+
 function U.ApplyReleaseMetadata(tagName, name, htmlUrl, assetUrl, publishedAt, prerelease)
     local v = tostring(tagName or ""):gsub("^v", "")
     if v == "" then return false end
@@ -83,21 +126,10 @@ local function isActiveBattleground()
 end
 
 local function getBroadcastChannel()
-    -- Prefer the most local/relevant shared channel. In open world there is
-    -- no native "nearby addon" channel in WoW 3.3.5a, so the guild channel
-    -- is the useful automatic fallback.
-    if isActiveBattleground() then
-        return "BATTLEGROUND"
-    end
-    if GetNumRaidMembers and GetNumRaidMembers() > 0 then
-        return "RAID"
-    end
-    if GetNumPartyMembers and GetNumPartyMembers() > 0 then
-        return "PARTY"
-    end
-    if IsInGuild and IsInGuild() then
-        return "GUILD"
-    end
+    if isActiveBattleground() then return "BATTLEGROUND" end
+    if GetNumRaidMembers and GetNumRaidMembers() > 0 then return "RAID" end
+    if GetNumPartyMembers and GetNumPartyMembers() > 0 then return "PARTY" end
+    if IsInGuild and IsInGuild() then return "GUILD" end
     return nil
 end
 
@@ -115,99 +147,90 @@ end
 local function requestDirectPlayer(unit, force)
     local name = getUnitName(unit)
     if not name or not SendAddonMessage then return false end
-
     local playerName = UnitName and UnitName("player") or ""
     if name == playerName then return false end
-
     local now = GetTime and GetTime() or 0
-    if not force and U.lastDirectName == name and now - (U.lastDirectRequest or 0) < U.directRequestCooldown then
-        return false
-    end
-
-    U.lastDirectName = name
-    U.lastDirectRequest = now
+    if not force and U.lastDirectName == name and now - (U.lastDirectRequest or 0) < U.directRequestCooldown then return false end
+    U.lastDirectName, U.lastDirectRequest = name, now
     SendAddonMessage(U.PREFIX, "REQ:" .. U.GetCurrentVersion(), "WHISPER", name)
     return true
 end
 
 local function chatMessage(text)
     local chat = DEFAULT_CHAT_FRAME or ChatFrame1
-    if chat and chat.AddMessage then
-        chat:AddMessage("|cffd8a84eDamageLife|r: " .. text)
-    end
+    if chat and chat.AddMessage then chat:AddMessage("|cffd8a84eDamageLife|r: " .. text) end
 end
 
 local function notifyNewerVersion(version, sender)
     local current = U.GetCurrentVersion()
     if U.CompareVersions(version, current) <= 0 then return end
-
     local now = GetTime and GetTime() or 0
-    local alreadyNotified = DamageLifeDB and DamageLifeDB.updateNoticeVersion == version
-    if alreadyNotified then return end
-    if now - (U.lastNoticeTime or 0) < U.noticeCooldown then return end
-
-    if DamageLifeDB then
-        DamageLifeDB.updateNoticeVersion = version
-    end
-    U.lastNoticeTime = now
-    U.lastPeer = sender or "unknown"
-    U.lastResult = {
-        latestVersion = version,
-        available = true,
-        source = "peer",
-        sender = sender or "unknown"
-    }
-
-    chatMessage("обнаружена новая версия |cff66ff66" .. tostring(version) .. "|r " ..
-        "(у Вас " .. tostring(current) .. "). Обновление доступно на GitHub.")
+    if DamageLifeDB and DamageLifeDB.updateNoticeVersion == version then return end
+    if (U.lastNoticeTime or 0) > 0 and now - U.lastNoticeTime < U.noticeCooldown then return end
+    if DamageLifeDB then DamageLifeDB.updateNoticeVersion = version end
+    U.lastNoticeTime, U.lastPeer = now, sender or "unknown"
+    U.lastResult = {latestVersion=version, available=true, source="peer", sender=sender or "unknown"}
+    chatMessage("обнаружена новая версия |cff66ff66" .. tostring(version) .. "|r (у Вас " .. tostring(current) .. "). Обновление доступно на GitHub.")
 end
 
 function U.RequestPeerCheck(force)
     if not SendAddonMessage then return false end
-
-    local sent = false
-    local now = GetTime and GetTime() or 0
+    local sent, now = false, GetTime and GetTime() or 0
+    local version = U.GetCurrentVersion()
+    if force then
+        wipe(U.manualPending)
+        U.manualDeadline = now + 2.5
+        U.manualSent, U.manualResponses, U.manualSummaryShown = 0, 0, false
+    end
     if force or now - (U.lastRequest or 0) >= U.requestCooldown then
         local channel = getBroadcastChannel()
         if channel then
             U.lastRequest = now
-            local version = U.GetCurrentVersion()
-            -- REQ is deliberately tiny; every DamageLife client answers with
-            -- its installed version through the same hidden addon channel.
             SendAddonMessage(U.PREFIX, "REQ:" .. version, channel)
             sent = true
+            U.manualSent = U.manualSent + 1
         end
     end
-
-    -- In the open world, automatically checking the current target and
-    -- mouseover gives a practical "nearby player" handshake without needing
-    -- an unsupported proximity-broadcast API.
-    if requestDirectPlayer("target", force) then sent = true end
-    if requestDirectPlayer("mouseover", force) then sent = true end
-
+    local directSeen = {}
+    local function requestUnique(unit)
+        local name = getUnitName(unit)
+        if not name or directSeen[name] then return false end
+        directSeen[name] = true
+        return requestDirectPlayer(unit, force)
+    end
+    for _, unit in ipairs({"target", "mouseover", "focus"}) do
+        if requestUnique(unit) then sent = true; U.manualSent = U.manualSent + 1 end
+    end
+    for i = 1, 5 do
+        if requestUnique("arena" .. i) then sent = true; U.manualSent = U.manualSent + 1 end
+    end
+    if force then
+        U.lastManualCheck = now
+        if sent then
+            chatMessage("проверка игроков запущена. Ожидаю ответы 2.5 сек...")
+        else
+            U.manualDeadline = 0
+            chatMessage("не найден доступный игрок или общий канал. В открытом мире выберите игрока целью/наведите на него курсор; без этого WoW 3.3.5a не предоставляет канала ближайших игроков.")
+        end
+    end
     return sent
 end
 
 function U.OnAddonMessage(prefix, message, channel, sender)
     if prefix ~= U.PREFIX or not message or not sender then return end
-
     local playerName = UnitName and UnitName("player") or ""
     if sender == playerName then return end
-
     if message == "REQ" or message:sub(1, 4) == "REQ:" then
         local version = U.GetCurrentVersion()
         if SendAddonMessage and channel then
-            if channel == "WHISPER" then
-                SendAddonMessage(U.PREFIX, "VER:" .. version, "WHISPER", sender)
-            else
-                SendAddonMessage(U.PREFIX, "VER:" .. version, channel)
-            end
+            if channel == "WHISPER" then SendAddonMessage(U.PREFIX, "VER:" .. version, "WHISPER", sender)
+            else SendAddonMessage(U.PREFIX, "VER:" .. version, channel) end
         end
         return
     end
-
     local version = message:match("^VER:(.+)$")
     if version then
+        rememberManualPeer(sender, version)
         notifyNewerVersion(version, sender)
     end
 end
@@ -219,8 +242,6 @@ function U.SetRepository(owner, repo)
     return true
 end
 
--- Event bridge. It is intentionally lightweight: checks happen on login/world
--- entry, after entering a group/BG, and on explicit manual request.
 U.frame = CreateFrame("Frame")
 U.frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 U.frame:RegisterEvent("GROUP_ROSTER_UPDATE")
@@ -232,8 +253,6 @@ U.frame:SetScript("OnEvent", function(_, event, ...)
     if event == "CHAT_MSG_ADDON" then
         U.OnAddonMessage(...)
     elseif event == "PLAYER_TARGET_CHANGED" or event == "UPDATE_MOUSEOVER_UNIT" then
-        -- A target/mouseover can be a player standing nearby even when the
-        -- player is not in our party, raid, guild or battleground.
         U.RequestPeerCheck(false)
     elseif event == "PLAYER_ENTERING_WORLD" or event == "GROUP_ROSTER_UPDATE" or event == "ZONE_CHANGED_NEW_AREA" then
         if event == "PLAYER_ENTERING_WORLD" then
@@ -254,8 +273,9 @@ U.frame:SetScript("OnEvent", function(_, event, ...)
     end
 end)
 
-if RegisterAddonMessagePrefix then
-    RegisterAddonMessagePrefix(U.PREFIX)
-end
+U.frame:SetScript("OnUpdate", function()
+    if U.manualDeadline and U.manualDeadline > 0 then finishManualCheck(false) end
+end)
 
+if RegisterAddonMessagePrefix then RegisterAddonMessagePrefix(U.PREFIX) end
 _G.DamageLifeUpdateChecker = U
